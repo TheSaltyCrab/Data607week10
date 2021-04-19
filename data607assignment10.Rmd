@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r load libraries and data, message=FALSE, warning=FALSE}
 library(ggplot2)
 library(tidyr)
 library(janeaustenr)
