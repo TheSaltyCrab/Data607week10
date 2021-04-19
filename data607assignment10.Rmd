@@ -1,0 +1,164 @@
+---
+title: "data607assignment10"
+author: "Daniel Sullivan"
+date: "4/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(janeaustenr)
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(textdata)
+```
+
+The below code was taken from the online text book Text mining with R from chapter 2:sentiment analysis. Here is the chapter link https://www.tidytextmining.com/sentiment.html
+
+It was provided as a road map for sentiment analysis. 
+```{r}
+
+get_sentiments("afinn")
+get_sentiments("bing")
+get_sentiments("nrc")
+```
+
+```{r}
+tidy_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  unnest_tokens(word, text)
+
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+tidy_books %>%
+  filter(book == "Emma") %>%
+  inner_join(nrc_joy) %>%
+  count(word, sort = TRUE)
+
+jane_austen_sentiment <- tidy_books %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(book, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+ggplot(jane_austen_sentiment, aes(index, sentiment, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free_x")
+```
+
+```{r}
+pride_prejudice <- tidy_books %>% 
+  filter(book == "Pride & Prejudice")
+
+afinn <- pride_prejudice %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 80) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  pride_prejudice %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  pride_prejudice %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+## MLK and Malcom X speaches
+
+For my analasis i wanted to compare the sentiment ratings for two speaches by Malcom X, and MLK. I wanted to do this because I know that Malcom x and MLK championed drastically different doctireins on how to approach desegregation and equal rights. The seaches i chose were MLK's "i have a dream, and Malcom X's "by any means neccessary" For this I found a lexicon for sentiment analysis specifically for the historical time period. This was found on stanford's social science website here https://nlp.stanford.edu/projects/socialsent/ I was hoping that it would give a much clearer picture of each speach and then used a rolling sum to graph the sentiment which i found is an interesting way to plot it because you can also see how the speach was structured. 
+
+first I grabed the corpus and the lexicon. 
+```{r}
+sentiment_1960<-read.table(file = 'https://raw.githubusercontent.com/TheSaltyCrab/Data607week10/main/1960.tsv', sep = '\t', header = TRUE)
+malcom<- read.delim("https://raw.githubusercontent.com/TheSaltyCrab/Data607week10/main/Malcom_anymeans.txt", header = FALSE)
+mlk<- read.delim("https://raw.githubusercontent.com/TheSaltyCrab/Data607week10/main/mlk_dream.txt", header = FALSE)
+```
+
+
+we then tidied the text files. first by reading them into a data frame then using the unnest function, an antijoin to remove stop words and an innerjoin to add our sentiment data for each speach.
+```{r}
+colnames(sentiment_1960)<-c("word", "sent_val", "sent_dev")
+colnames(malcom)<- "words"
+malcom["chunk"]<-c(1:87)
+colnames(mlk)<- "words"
+mlk["chunk"]<-c(1:44)
+
+malcom_words<-malcom%>%
+  unnest_tokens(output=word, input=words)%>%
+  anti_join(stop_words)%>%
+  inner_join(sentiment_1960)
+
+  
+mlk_words<-mlk%>%
+  unnest_tokens(output=word, input=words)%>%
+  anti_join(stop_words)%>%
+  inner_join(sentiment_1960)
+```
+
+in order to plot the trajectory of each speach I wanted to take a rolling sum as the words apeared in the speach giving weight by the sentiment lexicon I found. 
+```{r}
+malc_sum<-malcom_words%>%
+  select(word,sent_val)%>%
+  mutate("roll_sum"=cumsum(sent_val))
+
+mlk_sum<-mlk_words%>%
+  select(word,sent_val)%>%
+  mutate("roll_sum"=cumsum(sent_val))
+```
+
+I then ploted each speach es sentiment value.
+```{r}
+malc_sum["n"]<-c(1:2748)
+malc_sum%>%
+  ggplot(aes(n,roll_sum)) +
+  geom_col(show.legend = FALSE)# +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+```{r}
+mlk_sum["n"]<-c(1:416)
+mlk_sum%>%
+  ggplot(aes(n,roll_sum)) +
+  geom_col(show.legend = FALSE)# +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+```
+## Conclusions
+
+I found it very interesting that the man who was seen as the more abrasive speaker and more militant of the two carried a much larger negative value. This was kindof expected however when looking through the data it is interesting what my lexicon gave weights too. for example teacher, dog, living, italian, irish, york, beleives, pride, action all had negative values. I feal like this deffinitly did not help the sentiment value of Malcom and makes me question the lexicon.
+
+The I have a dream speach by MLK showed the most interesting results. where it is very clear MLk follows a speach outline of initially addressing the wrong doing and bad things going on and then finish out with one of the most encoureging lines in history and i think that clearly shows.
+
+I feal the laxicon and analysis clearly capture the tone of each speach with Malcom scoring negative sentiment for his call to arms and freedom by any means necessary while MLK got a high sentiment score as this is one of the most encouraging speaches in history.However because of some of the ways things were weighted i feel as though The lexicon may not be best fit for this data.
+
+If anything this project has shown me that text analysis can be very heavily influenced by bias after going through the stanford lexicon weights and if the lexicon is not topic specific it may cause mis enterpritation of data.
+
